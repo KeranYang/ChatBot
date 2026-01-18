@@ -17,8 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind("127.0.0.1:1234").unwrap();
 
     // Create a channel for message passing between clients and server.
-    // TODO - I think the <Message> can be removed once, since rust an automatically infer the type.
-    let (sender, receiver) = mpsc::channel::<Message>();
+    let (sender, receiver) = mpsc::channel();
 
     // Start a thread as server.
     // use std::thread;
@@ -43,16 +42,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Note: this is a long running application.
-    // TODO - implement graceful shutdown.
-
-    // Connect a stream to the local port.
-    // let stream =
-    //     TcpStream::connect("127.0.0.1:1234").expect("should be able to connect to the local port.");
-    // println!(
-    //     "Connected! Local IP is {}",
-    //     stream.local_addr().unwrap().ip()
-    // );
     Ok(())
 }
 
@@ -83,23 +72,30 @@ fn run_client(mut stream: TcpStream, tx: mpsc::Sender<Message>) {
         let read_res = stream.read(&mut buf);
         match read_res {
             Ok(_) => {
-                // TODO - Error Handling.
                 let content_res = String::from_utf8(buf.to_vec());
                 match content_res {
                     Ok(c) => {
                         let _send_res = tx.send(Message::NewMessage(c));
                     }
                     Err(e) => {
-                        eprint!("ERROR: reading inputs, closing the connection. {e}");
+                        eprintln!("ERROR: reading inputs, closing the connection. {e}");
                         let _send_res = tx.send(Message::ConnectionClosed(stream));
                         break;
                     }
                 }
             }
             Err(e) => {
-                eprint!("ERROR: reading inputs, closing the connection. {e}");
-                // TODO - Error Handling.
-                let _send_res = tx.send(Message::ConnectionClosed(stream));
+                eprintln!("ERROR: reading inputs, closing the connection. {e}");
+                let send_res = tx.send(Message::ConnectionClosed(stream));
+                match send_res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!(
+                            "ERROR: failed sending connection closed message back to the server. {e}"
+                        );
+                        break;
+                    }
+                }
                 break;
             }
         }
