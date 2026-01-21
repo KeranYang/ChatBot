@@ -36,8 +36,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     stream.peer_addr().unwrap()
                 );
                 // We want to share the stream across threads.
+                // Arc enables shared ownership across threads.
+                // Mutex ensures at any time, there is only one thread mutating the stream.
                 let s = Arc::new(Mutex::new(stream));
-                // TODO - error handling.
                 let _ = sender.send(Message::ConnectionEstablished(Arc::clone(&s)));
                 let tx = sender.clone();
                 // Start a thread as client.
@@ -58,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn run_server(rx: mpsc::Receiver<Message>) {
     println!("The server thread started.");
 
-    // Step 0: we need a HashMap to store active connections.
+    // A HashMap to store active connections.
     let mut conns = HashMap::new();
 
     // Handle incoming Messages.
@@ -70,6 +71,7 @@ fn run_server(rx: mpsc::Receiver<Message>) {
                 let peer_addr = s.lock().unwrap().peer_addr().unwrap();
                 conns.insert(peer_addr, "1");
                 println!("===Active Connections===");
+                // It's ok to clone here, because we only use the clone once to print out the current active connections.
                 conns
                     .clone()
                     .into_keys()
@@ -99,7 +101,7 @@ fn run_client(s: Arc<Mutex<TcpStream>>, tx: mpsc::Sender<Message>) {
                 let content_res = String::from_utf8(buf.to_vec());
                 match content_res {
                     Ok(c) => {
-                        let _send_res = tx.send(Message::NewMessage(c));
+                        let _ = tx.send(Message::NewMessage(c));
                     }
                     Err(e) => {
                         eprintln!("ERROR: reading inputs, closing the connection. {e}");
@@ -110,17 +112,7 @@ fn run_client(s: Arc<Mutex<TcpStream>>, tx: mpsc::Sender<Message>) {
             }
             Err(e) => {
                 eprintln!("ERROR: reading inputs, closing the connection. {e}");
-                let send_res = tx.send(Message::ConnectionClosed(Arc::clone(&s)));
-                match send_res {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!(
-                            "ERROR: failed sending connection closed message back to the server. {e}"
-                        );
-                        break;
-                    }
-                }
-                break;
+                let _ = tx.send(Message::ConnectionClosed(Arc::clone(&s)));
             }
         }
     }
